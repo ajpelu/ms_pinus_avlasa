@@ -1,7 +1,5 @@
 ---
 title: "Climate characterization"
-author: "ajpelu"
-date: "2023-07-12"
 output: workflowr::wflow_html
 editor_options:
   chunk_output_type: console
