@@ -1,7 +1,7 @@
-name: "ms_pinus_avlasa"
+name: ms_pinus_avlasa
 output_dir: ../docs
 navbar:
-  title: "ms_pinus_avlasa"
+  title: ms_pinus_avlasa
   left:
   - text: Home
     href: index.html
@@ -9,6 +9,10 @@ navbar:
     href: about.html
   - text: License
     href: license.html
+  right:
+  - icon: fab fa-github
+    text: Source code
+    href: https://github.com/ajpelu/ms_pinus_avlasa
 output:
   workflowr::wflow_html:
     toc: yes
