@@ -1,0 +1,423 @@
+---
+title: "Climate characterization"
+author: "ajpelu"
+date: "2023-07-12"
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10, fig.height = 7
+)
+```
+
+## Introduction
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(kableExtra)
+library(ggpmisc)
+library(Kendall)
+library(trend)
+```
+
+We selected the following sites: 
+
+- NSH: Nevada P. sylvestris Healthy 
+- NSD: Nevada P. sylvestris Decline
+- BSD: Baza P. sylvestris Decline 
+- ASH: Almijara P. sylvestris Healthy
+
+
+```{r}
+climate <- read_csv("data/climate_rediam.csv")
+spei <- read_csv("data/spei_extracted.csv")
+md <- readxl::read_excel("data/geoinfo/geo_pinos_lasa_metadatos.xlsx")
+eleva <- read_csv("data/geoinfo/elevacion_sites.csv")
+
+# selected sites
+selected_sites <- c("NSH", "NSD", "BSD", "ASH1")
+
+sites <- md |>
+  dplyr::filter(code_site %in% selected_sites) |>
+  mutate(type = case_when(
+    str_detect(name, "Autochtonous") ~ "Autochtonous",
+    TRUE ~ "Planted"
+  )) |>
+  mutate(status = case_when(
+    str_detect(name, "Healthy") ~ "Healthy",
+    str_detect(name, "Decline") ~ "Decline"
+  )) |>
+  mutate(mountain = case_when(
+    str_detect(site, "^[A]") ~ "S. Almijara",
+    str_detect(site, "B") ~ "S. Baza",
+    str_detect(site, "N") ~ "S. Nevada",
+  )) |>
+  inner_join(eleva)
+
+
+df_clima <- climate |>
+  rename(code_site = name) |>
+  mutate(date = as.Date(paste(year, month, "01", sep = "-"), format = "%Y-%m-%d")) |>
+  inner_join(
+    (sites |>
+      dplyr::select(code_site, name, site, status, mountain, elevation))
+  )
+```
+
+**Aims** 
+
+- Explore trends in Annual rainfall and temperatures (tmin, tmed and tmax)
+- Compare differences between sites for the climatic parameters 
+
+```{r, eval=FALSE}
+# Vemos que ASH1 y ASH2 climáticamente son identicos
+# Vemos que NAH1 y NAH2 climáticamente son idénticos
+
+# sites <- c("NSH","NSD","BAH","BSD","NAH1","NAH2","ASH1","ASH2","NAD", "ASD")
+sites <- c("NSH", "NSD", "BAH", "BSD", "NAH1", "ASH1", "NAD")
+```
+
+```{r}
+point_status <- c(
+  "Decline" = 15,
+  "Healthy" = 19
+)
+
+cols_parques <- c(
+  "S. Almijara" = "orange",
+  "S. Baza" = "#74c476",
+  "S. Nevada" = "#543005"
+)
+
+cols_sites <- c(
+  "ASH" = "orange",
+  "BSD" = "#74c476",
+  "NSD" = "#543005",
+  "NSH" = "#543005"
+)
+```
+
+
+
+## Annual Rainfall 
+
+```{r}
+df_prec <- df_clima |>
+  filter(var == "p") |>
+  group_by(year, site, elevation) |>
+  summarize(
+    prec = sum(value)
+  ) |>
+  mutate(status = case_when(
+    str_detect(site, "H") ~ "Healthy",
+    str_detect(site, "D") ~ "Decline"
+  )) |>
+  mutate(mountain = case_when(
+    str_detect(site, "^[A]") ~ "S. Almijara",
+    str_detect(site, "B") ~ "S. Baza",
+    str_detect(site, "N") ~ "S. Nevada",
+  ))
+
+```
+
+### Average values for all the temporal series by site
+
+```{r}
+avg_prec <- df_prec |>
+  group_by(site, elevation) |>
+  summarise(
+    mean = mean(prec, na.rm = FALSE),
+    sd = sd(prec, na.rm = FALSE),
+    se = sd / sqrt(length(prec))
+  )
+
+avg_prec |>   
+  kableExtra::kbl(caption = "Average Rainfall by site") |>
+  kable_styling()
+
+```
+
+### Site comparison
+```{r}
+
+my_comparisons <- list(
+  c("ASH", "BSD"),
+  c("ASH", "NSD"),
+  c("ASH", "NSH"),
+  c("BSD", "NSD"),
+  c("BSD", "NSH"),
+  c("NSD", "NSH")
+)
+
+pvalue_numero <- list(
+  cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, Inf),
+  symbols = c("<0.0001", "<0.001", "<0.01", "<0.01", "ns")
+)
+
+pvalue_ast <- list(
+  cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, Inf),
+  symbols = c("****", "***", "**", "*", "ns")
+)
+
+ggboxplot(df_prec,
+  x = "site",
+  y = "prec",
+  add = "jitter",
+  xlab = "",
+  ylab = "Annual Rainfall (mm)",
+  color = "site",
+  palette = cols_sites
+) +
+  stat_compare_means(
+    comparisons = my_comparisons,
+    label.y = c(1500, 1300, 1150, 1000, 800, 650),
+    symnum.args = pvalue_ast
+  ) +
+  stat_compare_means(
+    label.y = 1500,
+    label.x.npc = "center"
+  )
+```
+
+
+- Posthoc comparison between sites 
+```{r}
+compare_means(prec ~ site, df_prec,
+  method = "wilcox.test",
+  p.adjust.method = "bonferroni"
+) |>
+  kableExtra::kbl(caption = "Comparison of annual rainfall values among sites") |>
+  kable_styling()
+```
+
+### Temporal evolution of Annual Rainfall 
+
+```{r}
+df_prec |>
+  ggplot(aes(x = year, y = prec, group = site, colour = mountain)) +
+  geom_point(aes(shape = status), size = 3) +
+  geom_line() +
+  theme_bw() +
+  ylab("Annual Rainfall (mm)") +
+  scale_colour_manual(values = cols_parques, name = "Mountain") +
+  theme(
+    panel.grid = element_blank()
+  )
+```
+
+## Temperatures 
+
+```{r}
+df_temp <- df_clima |>
+  filter(var != "p") |>
+  group_by(year, site, elevation, var) |>
+  summarize(
+    mean = mean(value, na.rm = FALSE)
+  ) |>
+  mutate(status = case_when(
+    str_detect(site, "H") ~ "Healthy",
+    str_detect(site, "D") ~ "Decline"
+  )) |>
+  mutate(mountain = case_when(
+    str_detect(site, "^[A]") ~ "S. Almijara",
+    str_detect(site, "B") ~ "S. Baza",
+    str_detect(site, "N") ~ "S. Nevada",
+  )) |>
+  mutate(var = case_when(
+    var == "tm2" ~ "tmin",
+    var == "tm3" ~ "tmax",
+    TRUE ~ "tmed"
+  ))
+```
+
+
+### Average values for all the temporal series by site
+
+```{r}
+avg_temp <- df_temp |>
+  group_by(var, site, elevation) |>
+  summarise(
+    avg = mean(mean, na.rm = FALSE),
+    sd = sd(mean, na.rm = FALSE),
+    se = sd / sqrt(length(mean))
+  )
+
+avg_temp |>   
+  kableExtra::kbl(caption = "Average Temperature by site") |>
+  kable_styling()
+
+
+```
+
+### Site comparison
+
+#### Mean temperature 
+```{r}
+tmed <- df_temp |> filter(var == "tmed")
+
+ggboxplot(tmed,
+  x = "site",
+  y = "mean",
+  add = "jitter",
+  xlab = "",
+  ylab = "Mean temperature (ºC)",
+  color = "site",
+  palette = cols_sites
+) +
+  stat_compare_means(
+    comparisons = my_comparisons,
+    # label.y = c(15, 13, 11.5, 10, 8, 6.5),
+    symnum.args = pvalue_ast
+  ) +
+  stat_compare_means(
+    label.y = 17,
+    label.x.npc = "left"
+  )
+```
+
+- Posthoc comparison between sites 
+```{r}
+compare_means(mean ~ site, tmed,
+  method = "wilcox.test",
+  p.adjust.method = "bonferroni"
+) |>
+  kableExtra::kbl(caption = "Comparison among sites for Tmed") |>
+  kable_styling()
+```
+
+#### Tmin
+
+```{r}
+tmin <- df_temp |> filter(var == "tmin")
+
+ggboxplot(tmin,
+  x = "site",
+  y = "mean",
+  add = "jitter",
+  xlab = "",
+  ylab = "Minimum temperature (ºC)",
+  color = "site",
+  palette = cols_sites
+) +
+  stat_compare_means(
+    comparisons = my_comparisons,
+    # label.y = c(15, 13, 11.5, 10, 8, 6.5),
+    symnum.args = pvalue_ast
+  ) +
+  stat_compare_means(
+    label.y = 12,
+    label.x.npc = "left"
+  )
+```
+
+- Posthoc comparison between sites 
+```{r}
+compare_means(mean ~ site, tmin,
+  method = "wilcox.test",
+  p.adjust.method = "bonferroni"
+) |>
+  kableExtra::kbl(caption = "Comparison among sites for Tmin") |>
+  kable_styling()
+```
+
+#### Tmax
+
+```{r}
+tmax <- df_temp |> filter(var == "tmax")
+
+ggboxplot(tmax,
+  x = "site",
+  y = "mean",
+  add = "jitter",
+  xlab = "",
+  ylab = "Maximum temperature (ºC)",
+  color = "site",
+  palette = cols_sites
+) +
+  stat_compare_means(
+    comparisons = my_comparisons,
+    # label.y = c(15, 13, 11.5, 10, 8, 6.5),
+    symnum.args = pvalue_ast
+  ) +
+  stat_compare_means(
+    label.y = 12,
+    label.x.npc = "left"
+  )
+```
+
+- Posthoc comparison between sites 
+```{r}
+compare_means(mean ~ site, tmax,
+  method = "wilcox.test",
+  p.adjust.method = "bonferroni"
+) |>
+  kableExtra::kbl(caption = "Comparison among sites for Tmax") |>
+  kable_styling()
+```
+
+
+### Temporal evolution of Temperatures
+```{r}
+linetype_sites <- c(
+  "ASH" = "solid",
+  "BSD" = "solid",
+  "NSD" = "solid",
+  "NSH" = "dotted"
+)
+
+df_temp |>
+  ggplot(aes(x = year, y = mean, group = site, colour = mountain)) +
+  geom_point(aes(shape = status), size = 2) +
+  geom_line(aes(linetype = site)) +
+  theme_bw() +
+  ylab("Temperature (ºC)") +
+  facet_wrap(~var, scales = "free", ncol = 1) +
+  geom_smooth(aes(linetype = site), method = "lm", se = FALSE) +
+  scale_colour_manual(values = cols_parques, name = "Mountain") +
+  scale_linetype_manual(values = linetype_sites) +
+  theme(
+    panel.grid = element_blank(),
+    strip.background = element_rect(fill = "transparent")
+  ) +
+  guides(linetype = "none")
+```
+
+
+
+## Temporal trends analysis
+
+We performed a Mann-Kendall and Then Sen Slope analysis of the trend. The Mann-Kendall test is a nonparametric approach that provides valuable insights into the presence and direction of a trend. Its measure, known as Kendall Tau, ranges between -1 and 1. A positive Kendall Tau indicates an increasing trend, while a negative value suggests a decreasing trend. Additionally, we employed Sen's Slope estimator to determine the overall slope of the time series. This estimator calculates the median of all slopes between each pair of points in the series, providing a robust and reliable measure of the trend's magnitude. By employing these methodologies, we were able to thoroughly investigate the trend within the data and provide comprehensive information on its direction, magnitude, and statistical significance.
+
+```{r}
+mk <- 
+  df_prec |> 
+  mutate(var = "prec") |> 
+  rename(mean = prec) |> 
+  bind_rows(df_temp) |> 
+  group_by(var, site) |> 
+  summarise(
+    mk_tau = MannKendall(mean)$tau, 
+    mk_pvalue = MannKendall(mean)$sl,
+    sen_estimate = trend::sens.slope(mean)$estimate,
+    sen_pvalue = trend::sens.slope(mean)$p.value
+    ) 
+```
+
+```{r}
+mk |> 
+  kableExtra::kbl(caption = "Mann-Kendall analysis results") |>
+  kable_styling()
+```
+
+
+
+
+
