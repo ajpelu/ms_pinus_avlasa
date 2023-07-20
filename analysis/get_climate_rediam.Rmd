@@ -1,0 +1,111 @@
+---
+title: "get_climate_rediam"
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+---
+
+## Extract data 
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  eval = FALSE,
+  fig.width = 10, fig.height = 7
+)
+```
+
+
+```{r}
+library(tidyverse)
+library(sf)
+library(terra)
+library(purrr)
+```
+
+
+
+```{r}
+# Create a custom function to extract the data
+extract_climate_data <- function(shapefile, raster_folder_path) {
+
+  shapefile_to_extract <- terra::vect(shapefile)
+
+  # Read the raster files
+  files <- list.files(path = raster_folder_path, pattern = ".tif$", full.names = TRUE)
+
+  # Read a raster to compare crs
+  r <- terra::rast(files[1])
+
+  # Check projection and transform (project)
+  if (crs(r) != crs(shapefile_to_extract)) {
+    shapefile_to_extract <- terra::project(shapefile_to_extract, r)
+  }
+
+  # Extract all data
+  myF <- function(x) {
+    terra::extract(terra::rast(x), shapefile_to_extract, xy = TRUE)
+  }
+
+  extracted_data <- files |>
+    map(myF) |>
+    reduce(inner_join)
+
+  return(extracted_data)
+
+}
+```
+
+```{r}
+geo_pinos  <- "data/geoinfo/geo_pinos_lasa.shp"
+
+tmed_path <- "/Users/ajpelu/Google Drive/My Drive/Clima/REDIAM/TEMP_MEDIA_MENSUAL/InfGeografica/InfRaster/COG"
+tmin_path <- "/Users/ajpelu/Google Drive/My Drive/Clima/REDIAM/TEMP_MINIMA_MENSUAL/InfGeografica/InfRaster/COG"
+tmax_path <- "/Users/ajpelu/Google Drive/My Drive/Clima/REDIAM/TEMP_MAXIMA_MENSUAL/InfGeografica/InfRaster/COG"
+prec_path <- "/Users/ajpelu/Google Drive/My Drive/Clima/REDIAM/PRECIP_MENSUAL/InfGeografica/InfRaster/COG_500"
+
+
+tmed <- extract_climate_data(geo_pinos, raster_folder_path = tmed_path)
+tmin <- extract_climate_data(geo_pinos, raster_folder_path = tmin_path)
+tmax <- extract_climate_data(geo_pinos, raster_folder_path = tmax_path)
+prec <- extract_climate_data(geo_pinos, raster_folder_path = prec_path)
+
+```
+
+
+```{r}
+prepara_df <- function(x){
+  out <- x |>
+    pivot_longer(-c("ID","x", "y")) |>
+    separate(name, into=c("var", "year", "month", "cog")) |>
+    dplyr::select(-cog)
+  return(out)
+}
+
+mylist <- list(tmax, tmed, tmin, prec)
+
+df <- mylist |>
+  map(prepara_df) |>
+  reduce(rbind)
+
+geodf <- terra::vect(geo_pinos) |> as.data.frame() |>
+  rownames_to_column(var = "ID") |>
+  mutate(ID = as.numeric(ID)) 
+
+climate <- df |> inner_join(geodf)
+
+climate |> write_csv("data/climate_rediam.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
