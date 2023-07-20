@@ -11,6 +11,7 @@ editor_options:
 ## Prepare Data
 - [Get climate data](get_climate_rediam.html)
 - [Get elevation data](get_elevation_data.html)
+- [Get Drought index data (SPEI)](get_spei_data.html)
 
 ## Analysis
 
