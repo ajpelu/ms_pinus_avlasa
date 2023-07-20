@@ -1,0 +1,72 @@
+---
+title: "get_speic"
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  eval = FALSE,
+  fig.width = 10, fig.height = 7
+)
+```
+
+
+## Introduction
+
+```{r}
+library(tidyverse)
+library(terra)
+library(sf)
+library(here)
+
+```
+
+- Read points 
+```{r}
+pts <- st_read("data/geoinfo/geo_pinos_lasa.shp")
+pts <- st_transform(pts, 23030)
+names(pts)[1] <- "site"
+```
+
+
+- Read SPEI
+```{r}
+
+list_nc <- list.files(path = "/Users/ajpelu/Downloads", pattern = "spei", full.names = TRUE)
+
+extract_spei <- function(x, pts) {
+  
+  spei <- terra::rast(x)
+  spei_pts <- terra::extract(spei, pts, addlayer = TRUE)
+  spei_pts <- cbind(site = pts$site, spei_pts)
+  
+  v <- as.data.frame(
+    cbind(name = names(spei),
+          (time = terra::time(spei)))) |> 
+            mutate(
+              date = as.Date(as.numeric(time), origin='1970-01-01'))
+  
+  ff <- spei_pts |> 
+    dplyr::select(-ID) |> 
+    pivot_longer(-site) |> 
+    inner_join(v) |> 
+    mutate(spei = gsub(pattern = ".nc", replacement = "", basename(x)))
+
+  return(ff)
+    
+}
+
+g <- list_nc |> purrr::map_dfr(.x, 
+               .f = ~extract_spei(.x, pts))
+
+write_csv(g, "data/spei_extracted.csv")
+
+```
+
+
+
