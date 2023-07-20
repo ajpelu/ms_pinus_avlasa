@@ -1,0 +1,229 @@
+---
+title: "ndvi_evolution"
+author: "ajpelu"
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+---
+
+## Introduction
+
+```{r setup, include=FALSE}
+library(knitr)
+
+## Global options
+options(max.print="100")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               autodep = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggpubr)
+library(kableExtra)
+library(ggpmisc)
+library(Kendall)
+library(trend)
+```
+
+
+```{r read-data}
+md <- readxl::read_excel("data/geoinfo/geo_pinos_lasa_metadatos.xlsx")
+selected_sites <- c("NSH","NSD","BSD","ASH1")
+
+sites <- md |> 
+  dplyr::filter(code_site %in% selected_sites) |> 
+  mutate(type = case_when(
+    str_detect(name, 'Autochtonous') ~ "Autochtonous",
+    TRUE ~ "Planted")) |> 
+  mutate(status = case_when(
+    str_detect(name, 'Healthy') ~ 'Healthy',
+    str_detect(name, 'Decline') ~ 'Decline'))
+```
+
+### Long term NDVI evolution 
+
+```{r prepare-landast}
+# lc1 <- read_csv("data/landsat_C01_harmonized.csv") |> 
+#   rename(year = "system:time_start") |> 
+#   mutate(year = as.numeric(str_remove(year, "Aug 1, ")))
+
+landsat <- read_csv("data/landsat_C02.csv") |> 
+  rename(year = "system:time_start") |> 
+  mutate(year = as.numeric(str_remove(year, "Aug 1, "))) |> 
+  filter(year != 2023) |> 
+  pivot_longer(-year, names_to = "code_site", values_to = "ndvi_landsat") |> 
+  filter(code_site %in% selected_sites) |> 
+  inner_join(
+    (sites |> dplyr::select(code_site, name, sps, site, status)), by = c("code_site")
+  ) |> 
+  mutate(mountain = case_when(
+    str_detect(site, "^[A]") ~ "S. Almijara",
+    str_detect(site, "B") ~ "S. Baza",
+    str_detect(site, "N") ~ "S. Nevada",
+  )) 
+```
+
+
+```{r}
+point_status <- c(
+  "Decline" = 15,
+  "Healthy" = 19
+)
+
+cols_parques <- c(
+  "S. Almijara" = "orange",
+  "S. Baza" = "#74c476",
+  "S. Nevada" = "#543005"
+)
+
+cols_sites <- c(
+  "ASH" = "orange",
+  "BSD" = "#74c476",
+  "NSD" = "#543005",
+  "NSH" = "#543005"
+)
+```
+
+
+```{r}
+landsat |>
+  ggplot(aes(x = year, y = ndvi_landsat, group = site, colour = mountain)) +
+  geom_line() +
+  geom_point(aes(shape = status), size = 3) +
+  theme_bw() +
+  scale_shape_manual(values = c("Healthy" = 19, "Decline" = 15)) +
+  ylab("Annual NDVI (Landast 30-m)") +
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(hjust = 0, vjust = 1, margin = margin(-0.05, 0.8, 0, 0)),
+    plot.background = element_rect(fill = "transparent"), 
+    legend.position = "bottom"
+  ) +
+    scale_colour_manual(values = cols_parques, name = "Mountain") +
+  geom_smooth(method = "lm", se = FALSE)
+
+```
+
+
+```{r}
+my_comparisons <- list(
+  c("ASH", "BSD"),
+  c("ASH", "NSD"),
+  c("ASH", "NSH"),
+  c("BSD", "NSD"),
+  c("BSD", "NSH"),
+  c("NSD", "NSH")
+)
+
+pvalue_numero <- list(
+  cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, Inf),
+  symbols = c("<0.0001", "<0.001", "<0.01", "<0.01", "ns")
+)
+
+pvalue_ast <- list(
+  cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, Inf),
+  symbols = c("****", "***", "**", "*", "ns")
+)
+
+ggboxplot(landsat,
+  x = "site",
+  y = "ndvi_landsat",
+  add = "jitter",
+  xlab = "",
+  ylab = "Annual NDVI",
+  color = "site",
+  palette = cols_sites
+) +
+  stat_compare_means(
+    comparisons = my_comparisons,
+    # label.y = c(1500, 1300, 1150, 1000, 800, 650),
+    symnum.args = pvalue_ast
+  ) +
+  stat_compare_means(
+    # label.y = 1500,
+    label.x.npc = "center"
+  )
+```
+
+
+- Posthoc comparison between sites 
+```{r}
+compare_means(ndvi_landsat ~ site, landsat,
+  method = "wilcox.test",
+  p.adjust.method = "bonferroni"
+) |>
+  kableExtra::kbl(caption = "Comparison of annual rainfall values among sites") |>
+  kable_styling()
+```
+
+
+```{r}
+mk <- 
+  landsat |> 
+  group_by(site) |> 
+  summarise(
+    mk_tau = MannKendall(ndvi_landsat)$tau, 
+    mk_pvalue = MannKendall(ndvi_landsat)$sl,
+    sen_estimate = trend::sens.slope(ndvi_landsat)$estimate,
+    sen_pvalue = trend::sens.slope(ndvi_landsat)$p.value
+    ) 
+```
+
+```{r}
+mk |> 
+  kableExtra::kbl(caption = "Mann-Kendall analysis results") |>
+  kable_styling()
+```
+
+
+
+
+
+
+
+
+
+
+
+## Sentinel 
+```{r, eval=FALSE}
+sentinel <- read_csv("data/sentinel_iv_lasa.csv") |> 
+  separate("system:index", into=c("raw_date", "raw_date1", "aux", "aux1")) |> 
+  mutate(date = as.Date(substr(raw_date, 1,8), "%Y%m%d")) |> 
+  relocate(date) |> 
+  dplyr::select(date, ndvi = NDVI, code_site = name) |> 
+  filter(code_site %in% selected_sites) |> 
+  filter(!is.na(ndvi)) |> 
+    inner_join(
+    (sites |> dplyr::select(code_site, name, sps, area = name_site, site, status)), by = c("code_site")
+  ) |> 
+  filter(ndvi < 1) |> 
+  filter(ndvi > 0)
+
+
+sentinel |>
+  mutate(d = as.Date(date, format = "%Y-%m")) |> 
+  group_by(d, site, status) |> 
+  summarise(ndvi = mean(ndvi, na.rm = TRUE)) |> 
+  ggplot(aes(x = d, y = ndvi, group = site, colour = site)) +
+  geom_point(aes(shape = status)) +
+  theme_bw() +
+  geom_line()
+
+```
+
+
+
+
+
+
+
+
+
