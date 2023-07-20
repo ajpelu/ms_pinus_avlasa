@@ -8,6 +8,12 @@ editor_options:
   chunk_output_type: console
 ---
 
+## Prepare Data
+- [Get climate data](get_climate_rediam.html)
+- [Get elevation data](get_elevation_data.html)
+
 ## Analysis
 
 - [Climate data](climate.html)
+
+

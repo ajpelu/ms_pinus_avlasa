@@ -1,0 +1,36 @@
+---
+title: "get_elevation_data"
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+---
+
+## Introduction
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  eval = FALSE,
+  fig.width = 10, fig.height = 7
+)
+```
+
+```{r}
+library(sf)
+library(tidyverse)
+library(terra)
+library(elevatr)
+```
+
+
+```{r}
+pts <- sf::st_read("data/geoinfo/geo_pinos_lasa.shp", quiet = TRUE)
+eleva <- cbind(pts, get_elev_point(pts, src = "aws")) |>
+  sf::st_drop_geometry() |>
+  dplyr::select(code_site = name, elevation) |> as.data.frame()
+write_csv(eleva, "data/geoinfo/elevacion_sites.csv")
+```
+
+
