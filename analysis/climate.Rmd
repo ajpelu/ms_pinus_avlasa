@@ -39,6 +39,7 @@ climate <- read_csv("data/climate_rediam.csv")
 spei <- read_csv("data/spei_extracted.csv")
 md <- readxl::read_excel("data/geoinfo/geo_pinos_lasa_metadatos.xlsx")
 eleva <- read_csv("data/geoinfo/elevacion_sites.csv")
+spei_data <- read_csv("data/spei_extracted.csv")
 
 # selected sites
 selected_sites <- c("NSH", "NSD", "BSD", "ASH1")
@@ -390,6 +391,7 @@ df_temp |>
 
 
 
+
 ## Temporal trends analysis
 
 We performed a Mann-Kendall and Then Sen Slope analysis of the trend. The Mann-Kendall test is a nonparametric approach that provides valuable insights into the presence and direction of a trend. Its measure, known as Kendall Tau, ranges between -1 and 1. A positive Kendall Tau indicates an increasing trend, while a negative value suggests a decreasing trend. Additionally, we employed Sen's Slope estimator to determine the overall slope of the time series. This estimator calculates the median of all slopes between each pair of points in the series, providing a robust and reliable measure of the trend's magnitude. By employing these methodologies, we were able to thoroughly investigate the trend within the data and provide comprehensive information on its direction, magnitude, and statistical significance.
@@ -416,6 +418,95 @@ mk |>
 ```
 
 
+## Detailed climate data 
 
+### Comparison of the monthly profile of temperatures among study sites 
 
+```{r, fig.height=9}
+df_clima_recode <- df_clima |> 
+  mutate(var = case_when(
+    var == "tm2" ~ "tmin", 
+    var == "tm3" ~ "tmax",
+    var == "p" ~ "prec", 
+    TRUE ~ var
+  ))
+
+climate_avg_profile <- df_clima_recode |> 
+  group_by(site, var, month, mountain, elevation, status) |>
+  summarise(
+    mean = mean(value, na.rm = TRUE), 
+    sd = sd(value, na.rm = TRUE), 
+    se = sd / sqrt(length(value))
+  ) 
+
+climate_avg_profile |> 
+  filter(var != "prec") |> 
+  ggplot(aes(x=month, y = mean, group=site, color=mountain)) + 
+  geom_point(aes(shape = status), size = 2) +
+  geom_line(aes(linetype = site)) +
+  geom_errorbar(aes(ymin = mean - se, ymax= mean + se), width = 0.25) + 
+  scale_colour_manual(values = cols_parques, name = "Mountain") +
+  scale_linetype_manual(values = linetype_sites) +
+  guides(linetype = "none") + 
+  ylab("Temperature (ºC)") + 
+  facet_wrap(~var, ncol = 1, scales = "free_y") +
+  theme_bw() + 
+  theme(
+    panel.grid = element_blank(),
+    strip.background = element_rect(fill = "transparent")
+  ) 
+```
+
+### Comparisons of the 2021 and 2022 profiles with the averages
+- How did the temperatures in the years 2021 and 2022 differ from the average temperatures recorded during the period from 1980 to 2022?
+
+```{r}
+climate_avg_profile |> 
+  filter(var != "prec") |> 
+  ggplot(aes(x = month, y = mean, group = site)) + 
+  geom_ribbon(aes(ymin = mean - sd, ymax= mean + sd, fill=mountain), alpha=0.5) +
+  geom_line(colour="white") + 
+  scale_colour_manual(values = cols_parques, name = "Mountain") +
+  scale_fill_manual(values = cols_parques, name = "Mountain") +
+  ylab("Temperature (ºC)") + 
+  facet_grid(var~site, scales = "free_y") +
+  theme_bw() + 
+  theme(
+    panel.grid = element_blank(),
+    strip.background = element_rect(fill = "transparent")
+  ) +
+  geom_line(
+    data = (df_clima_recode |> filter(year == 2022) |> filter(var != "prec") |> rename(mean = value)), 
+    aes(x=month, y = mean, group = site, linetype = "2022"), show.legend = TRUE) +
+  geom_line(
+    data = (df_clima_recode |> filter(year == 2021) |> filter(var != "prec") |> rename(mean = value)), 
+    aes(x=month, y = mean, group = site, linetype = "2021"), show.legend = TRUE) +
+  scale_linetype_manual(
+    values = c("dotted", "dashed"),
+    labels = c("2022", "2021"),
+    name = "Year"
+  )
+```
+
+### Detailed monthly evolution 
+
+```{r}
+df_clima_recode |> 
+  filter(year > 2018) |> 
+  filter(var != "prec") |> 
+  mutate(date = lubridate::make_date(year, month)) |> 
+  ggplot(aes(x = date, y = value, group = site, colour = mountain)) + 
+  geom_point(aes(shape = status), size = 2) +
+  geom_line(aes(linetype = site)) +
+  facet_wrap(~var, scales = "free", ncol = 1) +
+  scale_colour_manual(values = cols_parques, name = "Mountain") +
+  scale_linetype_manual(values = linetype_sites) +
+  theme_bw() +
+  ylab("Monthly Temperatures (ºC)") + xlab("") + 
+  theme(
+    panel.grid = element_blank(),
+    strip.background = element_rect(fill = "transparent")
+  ) +
+  guides(linetype = "none")
+```
 
