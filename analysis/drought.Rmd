@@ -1,0 +1,183 @@
+---
+title: "Climate characterization"
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10, fig.height = 7
+)
+```
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(kableExtra)
+library(ggpmisc)
+library(data.table)
+
+spei_data <- read_csv("data/spei_extracted.csv")
+```
+
+
+
+## Introduction 
+- Assessment of the drought indices using SPEI Data since. 
+- Two indices were used: SPEI-6 months and SPEI-12 months 
+- Although we have the entire time series we will focus (the plots) on the period from 2010 onwards. 
+
+### Time-series exploration
+```{r}
+plot_spei <- function(spei_data, spei_indices, title, sites) {
+  spei_selected <- spei_data |>
+    filter(spei %in% spei_indices) |>
+    filter(site %in% sites) |> filter(!is.na(value)) |>
+    mutate(
+      sign = ifelse(value > 0, "pos", "neg"),
+      variable = recode(spei,
+                        "spei01" = "1-month",
+                        "spei03" = "3-month",
+                        "spei06" = "6-month",
+                        "spei09" = "9-month",
+                        "spei12" = "12-month",
+                        "spei24" = "24-month",
+                        "spei48" = "48-month"
+      )
+    )
+
+  p <- ggplot(spei_selected, aes(x = date, y = value, fill = sign)) +
+    geom_bar(stat = "identity") +
+    facet_grid(site~variable) +
+    scale_fill_manual(values = c("pos" = "darkblue", "neg" = "red")) +
+    theme_bw() +
+    labs(
+      title = title,
+      x = "",
+      y = "SPEI"
+    ) +
+    theme(
+      strip.background = element_rect(fill = "white"),
+      legend.position = "none"
+    )
+
+  return(p)
+}
+```
+
+```{r}
+sites <- c("BSD", "ASH1", "NSD", "NSH")
+
+spei2010 <- spei_data |> 
+  filter(date > as.Date("2010-01-01", format = "%Y-%m-%d"))
+
+plot_spei(spei_data = spei2010,
+                                 spei_indices = c("spei06"),
+                                 sites = sites,
+                                 title = "")
+```
+
+```{r}
+plot_spei(spei_data = spei2010,
+                                 spei_indices = c("spei12"),
+                                 sites = sites,
+                                 title = "")
+```
+
+
+
+
+### Compare the severe drought events. 
+A severe drought event starts when SPEI falls below the threshold of −1.28 (Páscoa et al 2017; Spinoni et al. 2018). A drought event is considered only when SPEI values fall below that threshold for at least two consecutive months. For each drought event, we computed: 
+
+- the duration as the number of consecutive months with the SPEI lower than a certain threshold
+- the severity as the sum of the absolute SPEI values during the drought event
+- the intensity and the Lowest SPEI refer to the mean and lowest value of SPEI, respectively, during the drought event.
+
+We computed the severe drought events (below -1.28) by site and per each index (i.e. SPEI-06 and SPEI-12) since 1960. 
+
+```{r}
+droughtIndicators <- function(df, vname, threshold) {
+
+  require(data.table)
+
+  # Add a new column indicating if the value is below the threshold and the following month is also below the threshold
+  out <- df |>
+    mutate(is_drought = ifelse(
+      .data[[vname]] < threshold & lead(.data[[vname]], default = .data[[vname]][n()]) < threshold, 1, 0
+    )) |>
+    mutate(date = lubridate::make_date(year, month))
+  # Compute the drought duration of the events
+  out2 <- out |>
+    group_by(index_events = data.table::rleid(is_drought)) |>
+    mutate(drought_duration = sum(is_drought)) |>
+    as.data.frame()
+
+  # Filter events with drought duration > 1
+  out3 <- out2 |>
+    filter(drought_duration > 1) |>
+    as.data.frame()
+
+  # Compute several indicators (drought assessments)
+  da <- out3 |>
+    group_by(index_events) |>
+    summarise(
+      d_duration = unique(drought_duration),
+      d_intensity = mean(.data[[vname]], na.rm = TRUE),
+      d_severity = sum(abs(.data[[vname]]), na.rm = TRUE),
+      lowest_spei = min(.data[[vname]]),
+      month_peak = month[which.min(.data[[vname]])],
+      minyear = min(year),
+      maxyear = max(year),
+      rangeDate = paste(
+        lubridate::month(min(date), label = TRUE), "-",
+        (lubridate::month(max(date), label = TRUE))
+      )
+    ) |>
+    as.data.frame()
+
+  return(list(data = out2, drought_events = out3, drought_assessment = da))
+}
+```
+
+
+```{r}
+spei_mensual  <- spei_data |> 
+  filter(spei %in% c("spei06", "spei12")) |> 
+  filter(site %in% sites) |> 
+  dplyr::select(site, spei, value, date) |> 
+  mutate(year = lubridate::year(date), 
+         month = lubridate::month(date)) |> 
+  group_by(site, spei, year, month) |> 
+  summarise(value = mean(value, na.rm = TRUE))
+
+
+spei_events <- spei_mensual |> 
+  group_by(spei, site) |> 
+  nest() |> 
+  mutate(drought_results = map(data, ~droughtIndicators(., "value", -1.28)$drought_assessmen)) %>%
+  unnest(drought_results) |> 
+  select(-data)
+
+write_csv(spei_events, "data/spei_events.csv")
+```
+
+```{r}
+spei_events |> 
+  filter(spei == "spei06") |> 
+  kbl(caption = "Drought periods by site (SPEI-06)") |> 
+    kable_styling()
+```
+
+```{r}
+spei_events |> 
+  filter(spei == "spei12") |> 
+  kbl(caption = "Drought periods by site (SPEI-12)") |> 
+    kable_styling()
+```
+
