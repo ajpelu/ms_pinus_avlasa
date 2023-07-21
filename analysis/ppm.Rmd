@@ -1,0 +1,113 @@
+---
+title: "Pine processionary Moth"
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10, fig.height = 7
+)
+```
+
+## Pine processionary moth
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(kableExtra)
+library(ggpmisc)
+library(Kendall)
+library(trend)
+```
+
+
+```{r}
+md <- readxl::read_excel("data/geoinfo/geo_pinos_lasa_metadatos.xlsx")
+eleva <- read_csv("data/geoinfo/elevacion_sites.csv")
+coplas <- read_csv("data/coplas2019.csv")
+
+# selected sites
+selected_sites <- c("NSH", "NSD", "BSD", "ASH1")
+
+sites <- md |>
+  dplyr::filter(code_site %in% selected_sites) |>
+  mutate(type = case_when(
+    str_detect(name, "Autochtonous") ~ "Autochtonous",
+    TRUE ~ "Planted"
+  )) |>
+  mutate(status = case_when(
+    str_detect(name, "Healthy") ~ "Healthy",
+    str_detect(name, "Decline") ~ "Decline"
+  )) |>
+  mutate(mountain = case_when(
+    str_detect(site, "^[A]") ~ "S. Almijara",
+    str_detect(site, "B") ~ "S. Baza",
+    str_detect(site, "N") ~ "S. Nevada",
+  )) |>
+  inner_join(eleva)
+
+
+df_coplas <- coplas |> 
+    dplyr::filter(code %in% md$coplas) |>
+    right_join(md, by=c("code"="coplas"), multiple = "all") |> 
+  filter(code_site %in% selected_sites) |> 
+  inner_join(sites)
+```
+
+
+```{r}
+point_status <- c(
+  "Decline" = 15,
+  "Healthy" = 19
+)
+
+cols_parques <- c(
+  "S. Almijara" = "orange",
+  "S. Baza" = "#74c476",
+  "S. Nevada" = "#543005"
+)
+
+cols_sites <- c(
+  "ASH" = "orange",
+  "BSD" = "#74c476",
+  "NSD" = "#543005",
+  "NSH" = "#543005"
+)
+
+linetype_sites <- c(
+  "ASH" = "solid",
+  "BSD" = "solid",
+  "NSD" = "solid",
+  "NSH" = "dotted"
+)
+```
+
+- Exploration of the time series of the Defoliation caused by PPM in our study areas (see [Candeira et al. 2019](https://doi.org/10.3897/zookeys.852.28567)
+
+```{r}
+d <- df_coplas |>
+  dplyr::select(-c(prov, sp, elev_min:elevF, area_ha, sp, perim, lat, long,
+                 samplingDateSummer, samplingDateSpring, inside)) |>
+  relocate(sp_abrev:site, .after = elev_mean) |>
+  pivot_longer(cols = `1993`:`2019`, names_to = 'year')
+
+d |> ggplot(aes(x=year, y=value, group=mountain, colour=mountain)) +
+  geom_point(aes(shape = status), size = 2) +
+  geom_line(aes(linetype = site)) +
+  facet_wrap(~site, ncol = 1) +
+  theme_bw() +
+  scale_colour_manual(values = cols_parques, name = "Mountain") +
+    theme(
+    panel.grid = element_blank(),
+    strip.background = element_rect(fill = "transparent")
+  ) + 
+  ylab("Defoliation level") + 
+  guides(linetype = "none")
+
+```
