@@ -1,0 +1,121 @@
+---
+title: "plot_supplementarial"
+author: "ajpelu"
+date: "2023-08-24"
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+---
+
+## Introduction
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10, fig.height = 7
+)
+```
+
+
+```{r}
+library(tidyverse)
+library(ggbreak)
+library(patchwork)
+library(cowplot)
+library(lubridate)
+```
+
+
+```{r}
+d06 <- read_csv("data/plot_spei06.csv")
+pdata <- read_csv("data/plot_climate.csv")
+```
+
+```{r}
+cols_sites <- c(
+  "ASH" = "#02BFFF",
+  "BSD" = "#05FF01",
+  "NSD" = "#FF00FF",
+  "NSH" = "#FF00FF"
+)
+
+cols_parques <- c(
+  "S. Almijara" = "#02BFFF",
+  "S. Baza" = "#05FF01",
+  "S. Nevada" = "#FF00FF"
+)
+```
+
+```{r}
+p_climate <- ggplot(pdata, aes(group = site, colour = mountain, fill = mountain)) +
+  geom_col(data = pdata |> filter(var == "prec"), 
+           mapping = aes(x = date, y = value/10), 
+           position = "dodge") +
+  geom_line(data = pdata |> filter(var == "tmed"), 
+            mapping = aes(x = date, y = value)) +
+  geom_point(data = pdata |> filter(var == "tmed"), 
+            mapping = aes(x = date, y = value, shape = status), size = 2) + 
+  scale_y_continuous(
+    "Monthly average temperatures (ºC) \n (line)", 
+    sec.axis = sec_axis(~ .*10, name = "Rainfall (mm) \n (bars)"), 
+    limits = c(0,30)) +
+  facet_wrap(~site, ncol = 1) +
+  scale_colour_manual(values = cols_parques, name = "Mountain") +
+  scale_fill_manual(values = cols_parques, name = "Mountain") +
+  theme_bw() +
+  xlab("") + 
+  theme(
+    panel.grid = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_blank(), 
+    # strip.background = element_rect(fill = "transparent"), 
+    legend.position = "top",
+  ) +
+  labs(shape = "Condition") +
+  geom_text(data = data.frame(site = unique(pdata$site), 
+                              date = rep(ymd("2020-01-01"), 4)), 
+            aes(x = date, y = 28, label = site), 
+            hjust = 0, vjust = 1,
+            size = 3,  colour = "black", 
+            inherit.aes = FALSE) 
+```
+
+
+```{r}
+p_spei <- d06 |> 
+  ggplot(aes(y = site)) +
+  geom_segment(aes(x = start_date, xend = end_date, yend = site, 
+                   size=abs(d_intensity), colour=site), lineend = "butt", 
+               position="identity") + 
+  scale_size("Drougth's Intensity", range=c(5,10)) + 
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y", 
+               limits = c(ymd("2000-01-01"), ymd("2022-06-01"))) +
+  scale_x_break(breaks = c(ymd("2000-03-01"), ymd("2004-02-01")), scales = "fixed") +
+  scale_x_break(breaks = c(ymd("2013-01-01"), ymd("2022-01-01")), scales = "fixed") +
+  scale_colour_manual(values = cols_sites, guide = "none") +
+  labs(x = "", y = "", ) + 
+  theme_minimal() +
+  theme(
+    # panel.grid.major.y = element_blank(), 
+    panel.grid.minor.x = element_blank(),
+    axis.text.x.top = element_blank(), 
+    axis.ticks.x.top = element_blank(), 
+    legend.position = "bottom"
+  ) 
+```
+
+```{r, fig.height=9, fig.width=7}
+plot_combined <- p_climate + p_spei + plot_layout(heights = c(1.8,1)) + plot_annotation(tag_levels = "A")
+plot_combined
+```
+
+```{r, echo=FALSE}
+ggsave(
+  plot_combined, 
+  file = "output/plot_climate_spei.png", 
+  dpi = 600, 
+  width = 7, height = 9
+)
+```
+
