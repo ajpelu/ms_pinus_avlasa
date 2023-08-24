@@ -20,4 +20,5 @@ editor_options:
 - [Pine processionary moth](ppm.html)
 - [NDVI (preliminary)](ndvi_evolution.html)
 
-
+## Proposed plots
+- [Climate and SPEI](plot_supplementarial.html)
