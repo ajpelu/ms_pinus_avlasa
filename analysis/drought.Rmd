@@ -21,20 +21,36 @@ library(ggpubr)
 library(kableExtra)
 library(ggpmisc)
 library(data.table)
-
-spei_data <- read_csv("data/spei_extracted.csv")
+library(patchwork)
+library(cowplot)
 ```
 
+```{r}
+spei_data <- read_csv("data/spei_extracted.csv") |> 
+  mutate(site = case_when(
+    site == "ASH1" ~ "ASH", 
+    TRUE ~ site
+  )) |> 
+  filter(date < as.Date("2022-06-01", format = "%Y-%m-%d")) 
+
+
+spei_datam <- spei_data |> 
+  mutate(date = lubridate::floor_date(date, unit = "month")) |> 
+  group_by(site, spei, date) |> 
+  summarize(value = mean(value, na.rm = TRUE))
+
+```
 
 
 ## Introduction 
 - Assessment of the drought indices using SPEI Data since. 
-- Two indices were used: SPEI-6 months and SPEI-12 months 
-- Although we have the entire time series we will focus (the plots) on the period from 2010 onwards. 
+- Two indices were used: SPEI-6 months and SPEI-12 months. Different temporal interval could be computed. According to [Vicente-Serrano et al. 2010](10.1175/2009JCLI2909.1) short time scales are mainly related to soil-water content and river discharge in headwater areas, medium time scales are related to reservoir storages and discharge in the medium course of the rivers, and longtime scales are related to variations in groundwater storage.
+- Although we have the entire time series we will focus (the plots) on the period from 2000 onwards. 
+- We filtered data up to May-2022 included
 
-### Time-series exploration
+## Time-series exploration
 ```{r}
-plot_spei <- function(spei_data, spei_indices, title, sites) {
+plot_spei <- function(spei_data, spei_indices, title, sites, ...) {
   spei_selected <- spei_data |>
     filter(spei %in% spei_indices) |>
     filter(site %in% sites) |> filter(!is.na(value)) |>
@@ -51,10 +67,11 @@ plot_spei <- function(spei_data, spei_indices, title, sites) {
       )
     )
 
-  p <- ggplot(spei_selected, aes(x = date, y = value, fill = sign)) +
+  p <- ggplot(spei_selected, aes(x = date, y = value, fill = sign, colour = sign)) +
     geom_bar(stat = "identity") +
     facet_grid(site~variable) +
-    scale_fill_manual(values = c("pos" = "darkblue", "neg" = "red")) +
+    scale_fill_manual(values = c("pos" = "darkblue", "neg" = "red")) + 
+    scale_colour_manual(values = c("pos" = "darkblue", "neg" = "red")) +
     theme_bw() +
     labs(
       title = title,
@@ -70,29 +87,180 @@ plot_spei <- function(spei_data, spei_indices, title, sites) {
 }
 ```
 
+
 ```{r}
-sites <- c("BSD", "ASH1", "NSD", "NSH")
+sites <- c("BSD", "ASH", "NSD", "NSH")
 
-spei2010 <- spei_data |> 
-  filter(date > as.Date("2010-01-01", format = "%Y-%m-%d"))
+spei_selected <- spei_data |> 
+  filter(date > as.Date("2000-01-01", format = "%Y-%m-%d")) 
 
-plot_spei(spei_data = spei2010,
+spei_selectedm <- spei_datam |> 
+  filter(date > as.Date("2000-01-01", format = "%Y-%m-%d")) 
+
+treshold <- -1.28
+```
+
+
+### SPEI-6 
+#### Weekly plot 
+
+```{r}
+plot_spei(spei_data = spei_selected,
                                  spei_indices = c("spei06"),
                                  sites = sites,
-                                 title = "")
+                                 title = "") + 
+  geom_hline(yintercept = treshold, colour = "black", linetype = "dashed") + 
+  scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+  theme(panel.grid.minor.x = element_blank())
+
+```
+
+### Monhtly-plot
+```{r}
+plot_spei(spei_data = spei_selectedm,
+                spei_indices = c("spei06"),
+                sites = sites,
+                title = "") +
+  geom_hline(yintercept = treshold, colour = "black", linetype = "dashed") + 
+  scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+  theme(panel.grid.minor.x = element_blank())
+```
+
+
+### SPEI-12 
+#### Weekly plot 
+```{r}
+plot_spei(spei_data = spei_selected,
+                                 spei_indices = c("spei12"),
+                                 sites = sites,
+                                 title = "") +
+  geom_hline(yintercept = treshold, colour = "black", linetype = "dashed") + 
+  scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+  theme(panel.grid.minor.x = element_blank())
+```
+
+### Monhtly-plot
+```{r}
+plot_spei(spei_data = spei_selectedm,
+                spei_indices = c("spei12"),
+                sites = sites,
+                title = "") +
+  geom_hline(yintercept = treshold, colour = "black", linetype = "dashed") + 
+  scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+  theme(panel.grid.minor.x = element_blank())
+```
+
+
+## Comparison of SPEI bewteen sites 
+
+```{r}
+spei06 <- spei_data |> 
+  filter(spei == "spei06") |> 
+  filter(date > as.Date("2000-01-01", format = "%Y-%m-%d")) |> 
+  filter(site %in% sites) |> 
+  na.omit() |> 
+  dplyr::select(date, value, site) |> 
+  pivot_wider(names_from = site, values_from = value) |> 
+  dplyr::select(date, ASH:NSD)
+```
+
+### Bootstraped Pearson Correlation 
+
+```{r}
+custom_bci <- function(data, site1, site2, nrep){ 
+  result <- confintr::ci_cor(data[c(site1,site2)], method = "spearman", type = "bootstrap", R = nrep)
+  
+  cor_value <- result$estimate[1] 
+  ci <- result$interval
+  vars <- dimnames(result$estimate)
+  
+  cor_df <- data.frame(
+    v1 = vars[[1]], 
+  v2 = vars[[2]], 
+  correlation = cor_value,
+  ci_lower = ci[1],
+  ci_upper = ci[2]
+)
+  return(cor_df)
+}
 ```
 
 ```{r}
-plot_spei(spei_data = spei2010,
-                                 spei_indices = c("spei12"),
-                                 sites = sites,
-                                 title = "")
+set.seed(1234)
+column_names <- c("ASH", "NSH", "BSD", "NSD")
+
+# Create all possible pairs of column names
+column_pairs <- combn(sites, 2, simplify = FALSE)
+
+# Apply custom function using purrr::map_df
+final_result <- purrr::map_df(column_pairs, ~ custom_bci(spei06, .[[1]], .[[2]], nrep = 5000))
+```
+
+```{r}
+final_result |> 
+  kbl(caption = "Boostraped Pearson correlation between series") |> 
+    kable_styling()
+```
+
+
+```{r, echo=FALSE, eval=FALSE}
+final_result |> 
+  unite("cors", v1:v2, remove = FALSE, sep = " vs ") |> 
+  ggplot(aes(x=cors, y=correlation)) + 
+ 
+  geom_linerange(aes(ymin = ci_lower, ymax = ci_upper)) + 
+  coord_flip() +
+  geom_point() + 
+  theme_minimal()
+```
+
+
+### Visualization
+
+```{r}
+# Create a list to store individual plots
+plot_list <- list()
+ylab <- "SPEI-06"
+# Loop through each column pair
+for (i in 1:length(column_pairs)) {
+  column_pair <- column_pairs[[i]]
+  
+  # Select the relevant columns and pivot them longer
+  data <- spei06 %>%
+    select(date, column_pair) %>%
+    pivot_longer(-date)
+  
+  # Create a ggplot line plot for the current column pair
+  plot <- ggplot(data, aes(date, y=value, group=name, colour=name)) +
+    geom_line() +
+    labs(title = paste(column_pair[1], "-", column_pair[2]),
+        y = ylab, x ="") +
+    scale_color_manual(values=c("blue", "black")) +
+    theme_minimal() +
+    theme(
+      legend.position = "top", 
+      legend.title = element_blank()
+    )
+  
+  # Add the plot to the list
+  plot_list[[i]] <- plot
+}
+
+# Combine all individual plots using patchwork
+combined_plot <- wrap_plots(plotlist = plot_list, ncol = 2)
+
+# Display the combined plot
+print(combined_plot)
+
 ```
 
 
 
 
-### Compare the severe drought events. 
+
+
+
+## Compare the severe drought events. 
 A severe drought event starts when SPEI falls below the threshold of −1.28 (Páscoa et al 2017; Spinoni et al. 2018). A drought event is considered only when SPEI values fall below that threshold for at least two consecutive months. For each drought event, we computed: 
 
 - the duration as the number of consecutive months with the SPEI lower than a certain threshold
@@ -143,6 +311,7 @@ droughtIndicators <- function(df, vname, threshold) {
 
   return(list(data = out2, drought_events = out3, drought_assessment = da))
 }
+
 ```
 
 
@@ -165,8 +334,10 @@ spei_events <- spei_mensual |>
   select(-data)
 
 write_csv(spei_events, "data/spei_events.csv")
+
 ```
 
+#### Drought events SPEI-06
 ```{r}
 spei_events |> 
   filter(spei == "spei06") |> 
@@ -174,10 +345,78 @@ spei_events |>
     kable_styling()
 ```
 
+##### Comparing drought events since 2000 
+
+```{r}
+d <- spei_events |> 
+  separate(rangeDate, into = c("minmonth", "maxmonth"), remove = FALSE) |> 
+  unite("start_date", minyear, minmonth, sep="-", remove = FALSE) |> 
+  unite("end_date", maxyear, maxmonth,  sep="-", remove = FALSE) |> 
+  mutate(start_date = as.Date(paste0(start_date, "-01"), format="%Y-%b-%d")) |> 
+  mutate(end_date = as.Date(paste0(end_date, "-01"), format="%Y-%b-%d")) |> 
+  rowwise() |> 
+  mutate(middate = (start_date + ((end_date - start_date)/2))) |> 
+  filter(start_date > as.Date("2000-01-01", format = "%Y-%m-%d")) 
+
+```
+
+```{r}
+d06 <- d |> 
+  filter(spei == "spei06") |> 
+  ungroup() |> 
+  dplyr::select(site, d_duration, d_intensity, d_severity, lowest_spei, month_peak, start_date, end_date, middate) 
+
+plot_intensity <- d06 |> 
+  ggplot(aes(y = site)) +
+  geom_segment(aes(x = start_date, xend = end_date, yend = site, size=abs(d_intensity)), 
+               colour = "red", lineend = "butt") +
+  theme_minimal() + 
+  labs(size = "Drougth's Intensity", x="")
+  
+
+plot_severity <- d06 |> 
+  ggplot(aes(y = site)) +
+  geom_point(aes(x = middate, y = site, size = d_severity)) + 
+  theme_minimal() + 
+  labs(size = "Drougth's Severity", x="")
+
+
+plot_grid(plot_intensity, plot_severity, ncol = 1, align = "v") + 
+          plot_annotation(title = "SPEI-06")
+```
+
+#### Drought events SPEI-12 
 ```{r}
 spei_events |> 
   filter(spei == "spei12") |> 
   kbl(caption = "Drought periods by site (SPEI-12)") |> 
     kable_styling()
 ```
+
+##### Comparing drought events since 2000 
+```{r}
+d12 <- d |> 
+  filter(spei == "spei12") |> 
+  ungroup() |> 
+  dplyr::select(site, d_duration, d_intensity, d_severity, lowest_spei, month_peak, start_date, end_date, middate) 
+
+plot_intensity <- d12 |> 
+  ggplot(aes(y = site)) +
+  geom_segment(aes(x = start_date, xend = end_date, yend = site, size=abs(d_intensity)), 
+               colour = "red", lineend = "butt") +
+  theme_minimal() + 
+  labs(size = "Drougth's Intensity", x="")
+  
+
+plot_severity <- d12 |> 
+  ggplot(aes(y = site)) +
+  geom_point(aes(x = middate, y = site, size = d_severity)) + 
+  theme_minimal() + 
+  labs(size = "Drougth's Severity", x="")
+
+
+plot_grid(plot_intensity, plot_severity, ncol = 1, align = "v") + 
+          plot_annotation(title = "SPEI-12")
+```
+
 
