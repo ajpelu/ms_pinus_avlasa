@@ -51,8 +51,8 @@ sites <- md |>
     TRUE ~ "Planted"
   )) |>
   mutate(status = case_when(
-    str_detect(name, "Healthy") ~ "Healthy",
-    str_detect(name, "Decline") ~ "Decline"
+    str_detect(name, "Healthy") ~ "Asymptomatic",
+    str_detect(name, "Decline") ~ "Symptomatic"
   )) |>
   mutate(mountain = case_when(
     str_detect(site, "^[A]") ~ "S. Almijara",
@@ -86,22 +86,23 @@ sites <- c("NSH", "NSD", "BAH", "BSD", "NAH1", "ASH1", "NAD")
 
 ```{r}
 point_status <- c(
-  "Decline" = 15,
-  "Healthy" = 19
+  "Symptomatic" = 15,
+  "Asymptomatic" = 19
 )
 
 cols_parques <- c(
-  "S. Almijara" = "orange",
-  "S. Baza" = "#74c476",
-  "S. Nevada" = "#543005"
+  "S. Almijara" = "#02BFFF",
+  "S. Baza" = "#05FF01",
+  "S. Nevada" = "#FF00FF"
 )
 
 cols_sites <- c(
-  "ASH" = "orange",
-  "BSD" = "#74c476",
-  "NSD" = "#543005",
-  "NSH" = "#543005"
+  "ASH" = "#02BFFF",
+  "BSD" = "#05FF01",
+  "NSD" = "#FF00FF",
+  "NSH" = "#FF00FF"
 )
+
 ```
 
 
@@ -116,8 +117,8 @@ df_prec <- df_clima |>
     prec = sum(value)
   ) |>
   mutate(status = case_when(
-    str_detect(site, "H") ~ "Healthy",
-    str_detect(site, "D") ~ "Decline"
+    str_detect(site, "H") ~ "Asymptomatic",
+    str_detect(site, "D") ~ "Symptomatic"
   )) |>
   mutate(mountain = case_when(
     str_detect(site, "^[A]") ~ "S. Almijara",
@@ -209,7 +210,8 @@ df_prec |>
   scale_colour_manual(values = cols_parques, name = "Mountain") +
   theme(
     panel.grid = element_blank()
-  )
+  ) +
+  labs(shape = "Condition")
 ```
 
 ## Temperatures 
@@ -222,8 +224,8 @@ df_temp <- df_clima |>
     mean = mean(value, na.rm = FALSE)
   ) |>
   mutate(status = case_when(
-    str_detect(site, "H") ~ "Healthy",
-    str_detect(site, "D") ~ "Decline"
+    str_detect(site, "H") ~ "Asymptomatic",
+    str_detect(site, "D") ~ "Symptomatic"
   )) |>
   mutate(mountain = case_when(
     str_detect(site, "^[A]") ~ "S. Almijara",
@@ -386,10 +388,9 @@ df_temp |>
     panel.grid = element_blank(),
     strip.background = element_rect(fill = "transparent")
   ) +
-  guides(linetype = "none")
+  guides(linetype = "none") + 
+  labs(shape = "Condition")
 ```
-
-
 
 
 ## Temporal trends analysis
@@ -493,6 +494,7 @@ climate_avg_profile |>
 ```{r}
 df_clima_recode |> 
   filter(year > 2018) |> 
+  filter(date < as.Date("2022-06-01", format = "%Y-%m-%d")) |> 
   filter(var != "prec") |> 
   mutate(date = lubridate::make_date(year, month)) |> 
   ggplot(aes(x = date, y = value, group = site, colour = mountain)) + 
@@ -509,4 +511,39 @@ df_clima_recode |>
   ) +
   guides(linetype = "none")
 ```
+
+### Temperature and precipitation combined plot
+
+```{r}
+pdata <- df_clima_recode |> 
+  filter(date > as.Date("2020-01-01", format = "%Y-%m-%d")) |> 
+  filter(date < as.Date("2022-06-01", format = "%Y-%m-%d")) |> 
+  filter(var %in% c("tmed", "prec")) |> 
+  mutate(date = lubridate::make_date(year, month)) 
+
+ggplot(pdata, aes(group = site, colour = mountain, fill = mountain)) +
+  geom_col(data = pdata |> filter(var == "prec"), 
+           mapping = aes(x = date, y = value/10), 
+           position = "dodge") +
+  geom_line(data = pdata |> filter(var == "tmed"), 
+            mapping = aes(x = date, y = value)) +
+  geom_point(data = pdata |> filter(var == "tmed"), 
+            mapping = aes(x = date, y = value, shape = status), size = 2) + 
+  scale_y_continuous(
+    "Monthly average temperatures (ºC) \n (line)", 
+    sec.axis = sec_axis(~ .*10, name = "Rainfall (mm) \n (bars)"), 
+    limits = c(0,30)) +
+  facet_wrap(~site, ncol = 1) +
+  scale_colour_manual(values = cols_parques, name = "Mountain") +
+  scale_fill_manual(values = cols_parques, name = "Mountain") +
+  theme_bw() +
+  xlab("") + 
+  theme(
+    panel.grid = element_blank(),
+    strip.background = element_rect(fill = "transparent"), 
+    legend.position = "bottom"
+  ) +
+  labs(shape = "Condition") 
+```
+
 
