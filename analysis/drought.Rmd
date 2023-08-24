@@ -1,5 +1,5 @@
 ---
-title: "Climate characterization"
+title: "Drought's Analysis"
 output: workflowr::wflow_html
 editor_options:
   chunk_output_type: console
@@ -23,6 +23,8 @@ library(ggpmisc)
 library(data.table)
 library(patchwork)
 library(cowplot)
+library(lubridate)
+library(ggbreak)
 ```
 
 ```{r}
@@ -383,7 +385,42 @@ plot_severity <- d06 |>
 
 plot_grid(plot_intensity, plot_severity, ncol = 1, align = "v") + 
           plot_annotation(title = "SPEI-06")
+
+write_csv(d06, "data/plot_spei06.csv")
 ```
+
+
+```{r}
+cols_sites <- c(
+  "ASH" = "#02BFFF",
+  "BSD" = "#05FF01",
+  "NSD" = "#FF00FF",
+  "NSH" = "#FF00FF"
+)
+
+d06 |> 
+  ggplot(aes(y = site)) +
+  geom_segment(aes(x = start_date, xend = end_date, yend = site, 
+                   size=abs(d_intensity), colour=site), lineend = "butt", 
+               position="identity") + 
+  scale_size("Drougth's Intensity", range=c(5,10)) + 
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y", 
+               limits = c(ymd("2000-01-01"), ymd("2022-06-01"))) +
+  scale_x_break(breaks = c(ymd("2000-03-01"), ymd("2004-02-01")), scales = "fixed") +
+  scale_x_break(breaks = c(ymd("2013-01-01"), ymd("2022-01-01")), scales = "fixed") +
+  scale_colour_manual(values = cols_sites) +
+  labs(x = "", y = "") + 
+  theme_minimal() +
+  theme(
+    panel.grid.major.y = element_blank(), 
+    panel.grid.minor.x = element_blank(),
+    axis.text.x.top = element_blank(), 
+    axis.ticks.x.top = element_blank()
+  )
+```
+
+
+
 
 #### Drought events SPEI-12 
 ```{r}
