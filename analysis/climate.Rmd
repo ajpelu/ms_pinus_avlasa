@@ -521,6 +521,8 @@ pdata <- df_clima_recode |>
   filter(var %in% c("tmed", "prec")) |> 
   mutate(date = lubridate::make_date(year, month)) 
 
+write_csv(pdata, "data/plot_climate.csv")
+
 ggplot(pdata, aes(group = site, colour = mountain, fill = mountain)) +
   geom_col(data = pdata |> filter(var == "prec"), 
            mapping = aes(x = date, y = value/10), 
@@ -544,6 +546,7 @@ ggplot(pdata, aes(group = site, colour = mountain, fill = mountain)) +
     legend.position = "bottom"
   ) +
   labs(shape = "Condition") 
+
 ```
 
 
