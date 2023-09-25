@@ -1,0 +1,164 @@
+---
+title: "climate_dialy"
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10, fig.height = 7
+)
+```
+
+## Introduction
+Interactive plot of the maximum, mean and minimum dialy temperatures for the study sites. Those data come from a grid of 500x500 m of resolution. 
+
+```{r}
+library(tidyverse)
+library(dygraphs)
+library(xts)
+```
+
+We selected the following sites: 
+
+- NSH: Nevada P. sylvestris Healthy 
+- NSD: Nevada P. sylvestris Decline
+- BSD: Baza P. sylvestris Decline 
+- ASH: Almijara P. sylvestris Healthy
+
+```{r}
+climate_grid <- read_csv("data/climate_rediam_dialy.csv") 
+
+# selected sites
+selected_sites <- c("NSH", "NSD", "BSD", "ASH1")
+
+
+df_clima_dialy <- climate_grid |>
+  dplyr::filter(name %in% selected_sites) |> 
+  rename(code_site = name) |>
+  mutate(date = as.Date(paste(year, month, day, sep = "-"), format = "%Y-%m-%d")) |> 
+  mutate(code_site = case_when(
+    code_site == "ASH1" ~ "ASH", 
+    TRUE ~ code_site
+  ))
+
+tmax <- df_clima_dialy |> filter(var == "tmax") |> 
+  dplyr::select(date, value, code_site) |> 
+  pivot_wider(values_from = value, names_from = code_site)
+
+tmed <- df_clima_dialy |> filter(var == "tmed") |> 
+  dplyr::select(date, value, code_site) |> 
+  pivot_wider(values_from = value, names_from = code_site)
+
+tmin <- df_clima_dialy |> filter(var == "tmin") |> 
+  dplyr::select(date, value, code_site) |> 
+  pivot_wider(values_from = value, names_from = code_site)
+```
+
+### Dialy maximum temperatures
+
+```{r}
+tmax2019 <- tmax |> dplyr::filter(date > as.Date("2019-01-01", format = "%Y-%m-%d"))
+tstmax <- xts(x=tmax2019, order.by = tmax2019$date)
+
+min_values <- sapply(tmax2019[, -1], min, na.rm = TRUE)
+max_values <- sapply(tmax2019[, -1], max, na.rm = TRUE)
+y_range <- c(min(min_values) - 1, max(max_values) + 1)
+
+
+cols_sites <- c(
+  "ASH" = "#02BFFF",
+  "BSD" = "#05FF01",
+  "NSD" = "#FF00FF",
+  "NSH" = "#FF00FF"
+)
+
+
+dygraph(tstmax) |> 
+  dyRangeSelector() |> 
+  dyAxis("y", label = "Dialy max temperature (ºC)", valueRange = y_range) |> 
+  dyAxis("x", drawGrid = FALSE) |> 
+  dySeries("ASH", color = "#02BFFF") |> 
+  dySeries("BSD", color = "#05FF01") |> 
+  dySeries("NSD", color = "#FF00FF", strokePattern = "dashed") |> 
+  dySeries("NSH", color = "#FF00FF") 
+  
+
+
+```
+
+### Dialy mean temperatures
+
+```{r}
+tmed2019 <- tmed |> dplyr::filter(date > as.Date("2019-01-01", format = "%Y-%m-%d"))
+tstemd <- xts(x=tmed2019, order.by = tmed2019$date)
+
+min_values <- sapply(tmed2019[, -1], min, na.rm = TRUE)
+max_values <- sapply(tmed2019[, -1], max, na.rm = TRUE)
+y_range <- c(min(min_values) - 1, max(max_values) + 1)
+
+
+dygraph(tstemd) |> 
+  dyRangeSelector() |> 
+  dyAxis("y", label = "Dialy Mean temperature (ºC)", valueRange = y_range) |> 
+  dyAxis("x", drawGrid = FALSE) |> 
+  dySeries("ASH", color = "#02BFFF") |> 
+  dySeries("BSD", color = "#05FF01") |> 
+  dySeries("NSD", color = "#FF00FF", strokePattern = "dashed") |> 
+  dySeries("NSH", color = "#FF00FF") 
+  
+```
+
+
+### Dialy minimum temperatures
+
+```{r}
+tmin2019 <- tmin |> dplyr::filter(date > as.Date("2019-01-01", format = "%Y-%m-%d"))
+tstmin <- xts(x=tmin2019, order.by = tmin2019$date)
+
+min_values <- sapply(tmin2019[, -1], min, na.rm = TRUE)
+max_values <- sapply(tmin2019[, -1], max, na.rm = TRUE)
+
+# Calculate the y-axis range, considering all series
+y_range <- c(min(min_values) - 1, max(max_values) + 1)
+
+dygraph(tstmin) |> 
+  dyRangeSelector() |> 
+  dyAxis("y", label = "Dialy Mean temperature (ºC)", valueRange = y_range) |> 
+  dyAxis("x", drawGrid = FALSE) |> 
+  dySeries("ASH", color = "#02BFFF") |> 
+  dySeries("BSD", color = "#05FF01") |> 
+  dySeries("NSD", color = "#FF00FF", strokePattern = "dashed") |> 
+  dySeries("NSH", color = "#FF00FF") 
+  
+```
+
+
+
+```{r, eval=FALSE, echo=FALSE}
+
+f <- list.files("data/climate_real/", full.names = TRUE) 
+custom_locale <- locale(decimal_mark = ",")
+
+read_custom <- function(x){ 
+  o <- read_csv2(x, locale = custom_locale)
+  result <- o |> 
+    mutate(INDICATIVO = as.character(INDICATIVO)) |> 
+    mutate(FECHA = as.Date(FECHA, format = "%d/%m/%Y"))
+  return(result)
+  }
+
+all <- f |> map(~read_custom(.x)) |> reduce(bind_rows)
+
+temp2018 <- all |> 
+  dplyr::filter(FECHA > as.Date("2019-01-01", format = "%Y-%m-%d"))
+
+
+```
+
+
+
