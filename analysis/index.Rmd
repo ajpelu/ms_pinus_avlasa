@@ -16,6 +16,7 @@ editor_options:
 ## Analysis
 
 - [Climate data](climate.html)
+- [Dialy climate data](climate_dialy.html)
 - [Drought (SPEI)](drought.html)
 - [Pine processionary moth](ppm.html)
 - [NDVI (preliminary)](ndvi_evolution.html)
